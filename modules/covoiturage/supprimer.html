@@ -1,0 +1,67 @@
+{{:assign var="retention_days" value=$module.config.retention_days|intval|or:30}}
+{{:delete :type="ride" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:delete :type="booking" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:admin_header title="Supprimer une annonce — Covoiturage de l’association" layout="public"}}
+{{:assign var="is_admin" value=false}}
+{{#restrict section="config" level="admin"}}{{:assign var="is_admin" value=true}}{{/restrict}}
+{{if !$logged_user}}
+	<section style="max-width:680px;margin:3em auto;padding:2em;border:1px solid #cfe3e3;border-radius:12px;background:#f1f9f8;text-align:center">
+		<h1 style="color:#008f87">Connexion à votre compte requise</h1>
+		<p>Pour gérer cette annonce, connectez-vous avec votre compte de l’association. Les visiteurs peuvent demander un compte simplifié, soumis à validation.</p>
+		<p><a href="{{$admin_url}}login.php">Se connecter</a> · <a href="./demande_acces.html">Demander un accès visiteur</a></p>
+	</section>
+{{else}}
+{{#load id=$_GET.id type="ride"}}
+	{{:assign var="can_direct" value=$is_admin}}
+	<h1>Supprimer votre annonce</h1>
+	<p>Annonce « {{$event}} » — {{$departure}} → {{$destination}} — {{$date|date_short}}.</p>
+	{{if $_POST.remove}}
+		{{:assign var="allowed" value=$can_direct}}
+		{{if $_POST.code|trim != '' && $delete_code != '' && $_POST.code|trim == $delete_code}}{{:assign var="allowed" value=true}}{{/if}}
+		{{if !$allowed}}
+			<p class="alert">Le code secret ne correspond pas.</p>
+		{{else}}
+			{{:delete :type="booking" :ride_id=$id where="$$.type = :type AND $$.ride_id = :ride_id"}}
+			{{:delete id=$id key=$delete_code type="ride"}}
+			{{:redirect url="./"}}
+		{{/if}}
+	{{/if}}
+	{{#form on="recover"}}
+		{{:assign var="captcha_pending" value=true}}
+		{{:captcha verify=true}}
+		{{:assign var="captcha_pending" value=false}}
+		{{if !$_POST.recover_email|trim|check_email}}
+			<p class="alert">Indiquez une adresse e-mail valide.</p>
+		{{elseif $_POST.recover_email|trim|tolower == $email|tolower}}
+			{{:assign var="recovery_body" value="Vous avez demandé le code de suppression de votre annonce de covoiturage.\n\nActivité : %s\nTrajet : %s → %s\nDate : %s\n\nCode secret de suppression : %s\n\nSaisissez ce code sur la page de suppression de cette annonce. Si vous n’êtes pas à l’origine de cette demande, ignorez ce message."|args:$event:$departure:$destination:$date:$delete_code}}
+			{{:mail to=$email subject="Code de suppression — covoiturage" body=$recovery_body block_urls=true}}
+			<p class="ok">Si cette adresse correspond à l’annonce, le code de suppression vient d’être envoyé. Vérifiez votre boîte de réception et vos courriers indésirables.</p>
+		{{else}}
+			<p class="ok">Si cette adresse correspond à l’annonce, le code de suppression vient d’être envoyé. Vérifiez votre boîte de réception et vos courriers indésirables.</p>
+		{{/if}}
+	{{/form}}
+	{{if $captcha_pending}}<p class="alert">Erreur de saisie dans la vérification anti-robot : veuillez réessayer.</p>{{else}}{{:form_errors}}{{/if}}
+	<form method="post" action="" onsubmit="return confirm('Supprimer définitivement cette annonce et ses pré-réservations ? Cette action est irréversible.');">
+		{{if $can_direct}}<p>En tant qu’administrateur, vous pouvez supprimer cette annonce sans code.</p>{{else}}<p>Le code secret reçu lors de la publication est obligatoire.</p>{{/if}}
+		<p><label for="code">Code secret reçu lors de la publication</label><br />
+		<input id="code" name="code" type="text" {{if !$can_direct}}required{{/if}} autocomplete="off" /></p>
+		<p><input type="submit" name="remove" value="Supprimer définitivement" /></p>
+	</form>
+	<hr />
+	<details {{if $_POST.recover}}open{{/if}}>
+		<summary><strong>Code oublié ?</strong></summary>
+		<p>Demandez son renvoi à l’adresse e-mail utilisée lors de la publication de l’annonce.</p>
+		<form method="post" action="">
+			<p><label for="recover_email">Adresse e-mail de l’annonce</label><br />
+			<input id="recover_email" name="recover_email" type="email" maxlength="254" autocomplete="email" value="{{$_POST.recover_email}}" required /></p>
+			<p>{{:captcha html=true}}</p>
+			<p>{{:button type="submit" name="recover" label="Renvoyer le code par e-mail" class="main"}}</p>
+		</form>
+	</details>
+{{else}}
+	<h1>Annonce introuvable</h1>
+	<p>Cette annonce n’existe plus ou n’est plus disponible.</p>
+{{/load}}
+<p><a href="./">Retour aux annonces</a></p>
+{{/if}}
+{{:admin_footer}}

@@ -1,0 +1,18 @@
+{{#restrict section="config" level="admin" block=true}}{{/restrict}}
+<section class="covoiturage-association-admin-requests">
+	<h3>Demandes d’accès visiteurs — Covoiturage de l’association</h3>
+	<p>Demandes en attente de traitement :</p>
+	{{#load type="access_request"
+		where="$$.status = :status"
+		:status="new"
+		order="json_extract(document, '$.submitted_at') DESC" limit=5}}
+		<article style="margin:.6em 0;padding:.7em .9em;border:1px solid #ccd8dd;border-radius:6px;background:#fff">
+			<p style="margin:.1em 0 .4em"><strong>{{$name}}</strong> · {{$submitted_at}}</p>
+			<p style="margin:.2em 0"><a href="mailto:{{$email}}">{{$email}}</a></p>
+			{{if $reason}}<p style="margin:.4em 0">{{$reason|nl2br}}</p>{{/if}}
+		</article>
+	{{else}}
+		<p>Aucune nouvelle demande pour le moment.</p>
+	{{/load}}
+	<p><a href="/m/covoiturage/demandes.html">Ouvrir toutes les demandes d’accès</a></p>
+</section>

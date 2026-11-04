@@ -1,0 +1,61 @@
+{{:admin_header title="Demander un accès visiteur — Covoiturage de l’association" layout="public"}}
+{{if $_GET.sent == '1'}}
+	<h1>Demande transmise</h1>
+	<p class="ok">Votre demande d’accès au covoiturage a été transmise à l’association. Elle sera examinée par un administrateur. Ce formulaire ne crée pas automatiquement de compte Paheko.</p>
+	<p>Si votre demande est acceptée, l’association vous communiquera les consignes pour vous connecter.</p>
+{{else}}
+	<h1>Demander un accès visiteur au covoiturage</h1>
+	<p>Ce formulaire permet de demander un compte limité à l’utilisation du covoiturage. La création du compte nécessite la validation d’un administrateur de l’association.</p>
+	{{#form on="request"}}
+		{{if $_POST.name|trim == ''}}
+			<p class="alert">Indiquez votre nom.</p>
+		{{elseif $_POST.name|strlen > 80}}
+			<p class="alert">Le nom est limité à 80 caractères.</p>
+		{{elseif !$_POST.email|trim|check_email || $_POST.email|strlen > 254}}
+			<p class="alert">Indiquez une adresse e-mail valide.</p>
+		{{elseif $_POST.phone|strlen > 40}}
+			<p class="alert">Le numéro de téléphone est limité à 40 caractères.</p>
+		{{elseif $_POST.reason|strlen > 500}}
+			<p class="alert">Le message est limité à 500 caractères.</p>
+		{{elseif $_POST.consent != '1'}}
+			<p class="alert">Vous devez accepter l’utilisation de vos données pour traiter la demande.</p>
+		{{elseif !$config.org_email|check_email}}
+			<p class="alert">L’adresse de contact de l’association n’est pas configurée. Contactez directement l’association.</p>
+		{{else}}
+			{{:assign var="captcha_pending" value=true}}
+			{{:captcha verify=true}}
+			{{:assign var="captcha_pending" value=false}}
+			{{:assign var="request_name" value=$_POST.name|trim}}
+			{{:assign var="request_email" value=$_POST.email|trim}}
+			{{:assign var="request_phone" value=$_POST.phone|trim}}
+			{{:assign var="request_reason" value=$_POST.reason|trim}}
+			{{:assign var="request_date" value="now"|date:"%Y-%m-%d %H:%M:%S"}}
+			{{:save assign_new_id="request_id" type="access_request" name=$request_name email=$request_email phone=$request_phone reason=$request_reason submitted_at=$request_date status="new"}}
+			{{:assign var="request_body" value="Une demande d’accès visiteur au module Covoiturage de l’association a été enregistrée dans Paheko.\n\nNom : %s\nAdresse e-mail : %s\nTéléphone : %s\n\nMessage :\n%s\n\nConsultez la rubrique « Demandes d’accès visiteurs » dans l’administration du module Covoiturage de l’association."|args:$request_name:$request_email:$request_phone:$request_reason}}
+			{{:mail to=$config.org_email subject="Demande d’accès visiteur — Covoiturage de l’association" body=$request_body block_urls=true}}
+			{{:redirect url="./demande_acces.html?sent=1"}}
+		{{/if}}
+	{{/form}}
+	{{if $captcha_pending}}<p class="alert">La vérification anti-robot a échoué. Réessayez.</p>{{else}}{{:form_errors}}{{/if}}
+	<form method="post" action="">
+		<dl>
+			<dt><label for="name">Votre nom</label></dt>
+			<dd><input id="name" name="name" type="text" maxlength="80" value="{{$_POST.name}}" autocomplete="name" required /></dd>
+			<dt><label for="email">Votre adresse e-mail</label></dt>
+			<dd><input id="email" name="email" type="email" maxlength="254" value="{{$_POST.email}}" autocomplete="email" required /></dd>
+			<dt><label for="phone">Votre numéro de téléphone (facultatif)</label></dt>
+			<dd><input id="phone" name="phone" type="tel" maxlength="40" value="{{$_POST.phone}}" autocomplete="tel" /></dd>
+			<dt><label for="reason">Message (facultatif)</label></dt>
+			<dd><textarea id="reason" name="reason" maxlength="500" rows="4">{{$_POST.reason}}</textarea></dd>
+		<dt>Utilisation des données</dt>
+		<dd><label for="consent" style="display:flex;align-items:flex-start;gap:.5em;">
+			<input id="consent" name="consent" type="checkbox" value="1" required style="appearance:auto;-webkit-appearance:checkbox;display:inline-block;position:static;flex:0 0 1.2em;opacity:1;visibility:visible;width:1.2em;height:1.2em;min-width:1.2em;margin:.15em 0 0;" />
+			<span>J’accepte que ces informations soient transmises aux responsables de l’association pour traiter ma demande d’accès au covoiturage. Elles ne seront pas publiées et ne créent pas automatiquement un compte Paheko.</span>
+		</label></dd>
+			<dt>{{:captcha html=true}}</dt>
+		</dl>
+		<p>{{:button type="submit" name="request" label="Envoyer ma demande" class="main"}}</p>
+	</form>
+{{/if}}
+<p><a href="./">Retour au covoiturage</a></p>
+{{:admin_footer}}

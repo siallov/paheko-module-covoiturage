@@ -1,0 +1,110 @@
+{{:assign var="retention_days" value=$module.config.retention_days|intval|or:30}}
+{{:delete :type="ride" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:delete :type="booking" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:assign var="today" value="now"|date:"%Y-%m-%d"}}
+{{:admin_header title="Pré-réserver des places — Covoiturage de l’association" layout="public"}}
+{{:assign var="allow_prereservation" value=$module.config.allow_prereservation}}
+{{if $allow_prereservation === null}}{{:assign var="allow_prereservation" value=true}}{{/if}}
+{{:assign var="can_view" value=true}}
+{{if !$logged_user}}{{:assign var="can_view" value=false}}{{/if}}
+{{if $can_view}}{{:assign var="can_participate" value=true}}{{/if}}
+{{if !$can_participate}}
+	<section style="max-width:680px;margin:3em auto;padding:2em;border:1px solid #cfe3e3;border-radius:12px;background:#f1f9f8;text-align:center">
+		<h1 style="color:#008f87">Connectez-vous pour pré-réserver</h1>
+		<p>La pré-réservation est ouverte aux membres connectés et aux visiteurs après création et validation d’un compte simplifié.</p>
+		<p><a href="{{$admin_url}}login.php">Se connecter</a> · <a href="./demande_acces.html">Demander un accès visiteur</a></p>
+	</section>
+{{elseif !$allow_prereservation}}
+	<h1>Pré-réservation désactivée</h1>
+	<p>Les pré-réservations ne sont pas ouvertes actuellement.</p>
+{{else}}
+{{#load id=$_GET.id type="ride"}}
+	{{if $kind != 'offer'}}
+		<h1>Cette annonce ne propose pas de places</h1>
+		<p><a href="./">Retour aux annonces</a></p>
+	{{elseif $date < $today}}
+		<h1>Ce trajet est passé</h1>
+		<p>Les pré-réservations ne sont plus possibles pour un trajet déjà effectué.</p>
+		<p><a href="./">Retour aux annonces</a></p>
+	{{else}}
+		<h1>Pré-réserver des places</h1>
+		<p><strong>{{$event}}</strong> · {{$date|date_short}}{{if $time}} à {{$time}}{{/if}}</p>
+		<p>{{$departure}} → {{$destination}}</p>
+		{{:assign var="reserved_num" value=$reserved|intval}}
+		{{:assign var="available" value="%d-%d"|args:$seats:$reserved_num|math}}
+		{{#form on="book"}}
+			{{:assign var="requested" value=$_POST.booking_seats|intval}}
+			{{if $_POST.requester|trim == '' || $_POST.requester|strlen > 80}}
+				<p class="alert">Indiquez votre nom (80 caractères maximum).</p>
+			{{elseif !$_POST.requester_email|trim|check_email || $_POST.requester_email|strlen > 254}}
+				<p class="alert">Indiquez une adresse e-mail valide.</p>
+			{{elseif $requested < 1}}
+				<p class="alert">Réservez au moins une place.</p>
+			{{elseif $requested > $available}}
+				<p class="alert">Il ne reste pas assez de places pour cette demande.</p>
+			{{elseif $_POST.consent != '1'}}
+				<p class="alert">Vous devez accepter l’utilisation de ces données.</p>
+			{{elseif $_POST.charter != '1'}}
+				<p class="alert">Vous devez accepter la charte de covoiturage.</p>
+			{{else}}
+				{{:assign var="captcha_pending" value=true}}
+				{{:captcha verify=true}}
+				{{:assign var="captcha_pending" value=false}}
+				{{:assign var="new_reserved" value="%d+%d"|args:$reserved_num:$requested|math}}
+				{{:assign var="remaining_after" value="%d-%d"|args:$seats:$new_reserved|math}}
+				{{:assign var="requester_name" value=$_POST.requester|trim}}
+				{{:assign var="requester_email" value=$_POST.requester_email|trim}}
+				{{* Aucune donnée personnelle conservée : nom et e-mail ne servent qu’au message envoyé au conducteur *}}
+				{{:save type="booking" ride_id=$id date=$date seats=$requested}}
+				{{:save id=$id type="ride" reserved=$new_reserved}}
+				{{:assign var="mail_body" value="Pré-réservation de %d place(s) pour votre trajet %s, le %s.\n\nDemandeur : %s\nAdresse e-mail : %s\n\nVous pouvez le contacter pour confirmer les modalités."|args:$requested:$event:$date:$requester_name:$requester_email}}
+				{{:mail to=$email subject="Pré-réservation covoiturage" body=$mail_body block_urls=true}}
+				{{:assign var="booking_done" value=true}}
+				<p class="ok">Votre pré-réservation est enregistrée. Le conducteur a été informé par e-mail. Il reste {{$remaining_after}} place(s) disponible(s).</p>
+			{{/if}}
+		{{/form}}
+		{{if $captcha_pending}}<p class="alert">Erreur de saisie dans la vérification anti-robot : veuillez réessayer.</p>{{else}}{{:form_errors}}{{/if}}
+		{{if !$booking_done}}<p>Places encore disponibles : <strong>{{$available}}</strong></p>{{/if}}
+		{{if !$booking_done && $available > 0}}
+			<form method="post" action="">
+				<dl>
+					<dt><label for="requester">Votre nom</label></dt>
+					<dd><input id="requester" name="requester" type="text" maxlength="80" value="{{if $_POST.book}}{{$_POST.requester}}{{/if}}" required /></dd>
+					<dt><label for="requester_email">Votre adresse e-mail (non affichée)</label></dt>
+					<dd><input id="requester_email" name="requester_email" type="email" maxlength="254" value="{{if $_POST.book}}{{$_POST.requester_email}}{{/if}}" required /></dd>
+					<dt><label for="booking_seats">Nombre de places à pré-réserver</label></dt>
+					<dd><input id="booking_seats" name="booking_seats" type="number" min="1" max="{{$available}}" value="{{if $_POST.book}}{{$_POST.booking_seats|intval}}{{else}}1{{/if}}" required /></dd>
+					<dt>Utilisation de vos données</dt>
+					<dd style="display: flex; align-items: flex-start; gap: .5em;">
+						<input id="booking_consent" name="consent" type="checkbox" value="1" required style="appearance: auto; -webkit-appearance: checkbox; display: inline-block; position: static; opacity: 1; visibility: visible; width: 1.2em; height: 1.2em; min-width: 1.2em; margin: .15em 0 0;" />
+						<label for="booking_consent" style="display: inline;">J’accepte que mes coordonnées soient transmises au conducteur pour organiser ce trajet. Elles ne seront pas affichées publiquement.</label>
+					</dd>
+					<dt>{{:captcha html=true}}</dt>
+				</dl>
+				<details>
+					<summary>Lire la charte de covoiturage</summary>
+					<ul>
+						<li>La pré-réservation est une demande de mise en relation ; le trajet doit être confirmé directement avec le conducteur avant le départ.</li>
+						<li>Conducteur et passagers conviennent ensemble de l’horaire, du lieu de rendez-vous, de l’itinéraire et, le cas échéant, d’une participation aux frais.</li>
+						<li>Le conducteur s’assure d’être en règle pour conduire et d’utiliser un véhicule assuré et adapté. Il respecte le code de la route et les consignes de sécurité.</li>
+						<li>Chaque passager respecte les consignes de sécurité et porte sa ceinture. Chacun prévient les autres participants dès que possible en cas de changement ou d’annulation.</li>
+						<li>L’association fournit uniquement cet espace de mise en relation et n’organise ni ne garantit les trajets.</li>
+					</ul>
+				</details>
+				<p style="display: flex; align-items: flex-start; gap: .5em;">
+					<input id="booking_charter" name="charter" type="checkbox" value="1" required style="appearance: auto; -webkit-appearance: checkbox; display: inline-block; position: static; opacity: 1; visibility: visible; width: 1.2em; height: 1.2em; min-width: 1.2em; margin: .15em 0 0;" />
+					<label for="booking_charter" style="display: inline;">J’ai lu et j’accepte la charte de covoiturage.</label>
+				</p>
+				<p style="display: flex; flex-wrap: wrap; align-items: center; gap: .75em;">{{:button type="submit" name="book" label="Confirmer la pré-réservation" class="main"}}<a href="./" role="button" style="display: inline-block; padding: .45em .9em; border: 1px solid currentColor; border-radius: 4px; text-decoration: none;">Abandon</a></p>
+			</form>
+		{{elseif $available < 1}}
+			<p class="alert">Toutes les places sont pré-réservées.</p>
+		{{/if}}
+	{{/if}}
+{{else}}
+	<h1>Trajet introuvable</h1>
+	<p>Cette annonce n’est plus disponible.</p>
+{{/load}}
+{{/if}}
+<p><a href="./">Retour aux annonces</a></p>
+{{:admin_footer}}

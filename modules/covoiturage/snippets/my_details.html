@@ -1,0 +1,29 @@
+{{:assign var="uid" value=0}}
+{{if $logged_user.id}}{{:assign var="uid" value=$logged_user.id}}{{elseif $user.id}}{{:assign var="uid" value=$user.id}}{{/if}}
+{{:assign var="today" value="now"|date:"%Y-%m-%d"}}
+<section class="covoiturage-association-me">
+	<h3>Mes annonces de covoiturage (Covoiturage de l’association)</h3>
+	{{if !$uid}}
+		<p class="alert">Impossible d’identifier le membre connecté dans ce module.</p>
+	{{else}}
+	{{#load type="ride"
+		where="$$.author_id = :uid"
+		:uid=$uid
+		order="json_extract(document, '$.date') ASC" limit=100}}
+		<div class="block" style="margin-bottom: .8em; padding: .6em .9em; border: 1px solid #ccc; border-radius: 4px;">
+			<p>{{if $kind == 'offer'}}🚘 <strong>Je propose des places</strong>{{else}}🙋 <strong>Je cherche une place</strong>{{/if}}{{if $date < $today}} <em>(trajet passé)</em>{{/if}}</p>
+			<p>Pour : <strong>{{$event}}</strong></p>
+			<p>{{$departure}} → {{$destination}} · {{$date|date_short}}{{if $time}} à {{$time}}{{/if}}</p>
+			{{if $kind == 'offer'}}
+				{{:assign var="reserved_num" value=$reserved|intval}}
+				{{:assign var="available" value="%d-%d"|args:$seats:$reserved_num|math}}
+				<p>Places : {{$reserved_num}} pré-réservée(s) sur {{$seats}} · {{$available}} disponible(s)</p>
+			{{/if}}
+			<p><a href="/m/covoiturage/supprimer.html?id={{$id}}">Supprimer cette annonce</a></p>
+		</div>
+	{{else}}
+		<p class="help">Vous n’avez publié aucune annonce de covoiturage lorsque vous étiez connecté.</p>
+	{{/load}}
+	{{/if}}
+	<p><a href="/m/covoiturage/">Voir toutes les annonces de covoiturage</a></p>
+</section>

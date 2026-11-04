@@ -1,0 +1,36 @@
+{{:assign var="uid" value=0}}
+{{if $logged_user.id}}{{:assign var="uid" value=$logged_user.id}}{{elseif $user.id}}{{:assign var="uid" value=$user.id}}{{/if}}
+<div class="covoiturage-association-home" style="display: inline-block; vertical-align: top; margin: .3em; padding: .7em 1em; border: 1px solid #ccc; border-radius: 6px; min-width: 14em;">
+	<p style="margin: 0 0 .4em;"><a href="/m/covoiturage/"><strong>🚘 Covoiturage de l’association</strong></a></p>
+	{{if $uid}}
+	{{#load type="ride"
+		where="$$.author_id = :uid AND $$.date >= date('now', 'localtime')"
+		:uid=$uid
+		order="json_extract(document, '$.date') ASC" limit=5}}
+		{{:assign var="reserved_num" value=$reserved|intval}}
+		{{:assign var="available" value="%d-%d"|args:$seats:$reserved_num|math}}
+		<p style="margin: .2em 0; font-size: .9em;">{{if $kind == 'offer'}}🚘{{else}}🙋{{/if}} {{$date|date_short}} · {{$departure}} → {{$destination}}{{if $kind == 'offer'}} ({{$available}} pl. dispo){{/if}}</p>
+	{{else}}
+		<p style="margin: .2em 0; font-size: .9em;">Aucune annonce à venir.</p>
+	{{/load}}
+	{{/if}}
+</div>
+{{#restrict section="users" level="write"}}
+<div class="covoiturage-association-admin-requests" style="display:inline-block;vertical-align:top;margin:.3em;padding:.7em 1em;border:1px solid #cfe3e3;border-radius:6px;min-width:18em;max-width:28em;background:#f1f9f8">
+	<p style="margin:0 0 .5em"><strong>Demandes d’accès visiteurs</strong></p>
+	{{#load type="access_request"
+		where="$$.status = :status"
+		:status="new"
+		order="json_extract(document, '$.submitted_at') DESC" limit=5}}
+		<div style="margin:.5em 0;padding:.5em;border-top:1px solid #cfe3e3">
+			<p style="margin:.1em 0 .3em"><strong>{{$name}}</strong> · {{$submitted_at}}</p>
+			<p style="margin:.2em 0"><a href="mailto:{{$email}}">{{$email}}</a></p>
+			{{if $phone}}<p style="margin:.2em 0">Tél. : <a href="tel:{{$phone}}">{{$phone}}</a></p>{{/if}}
+			{{if $reason}}<p style="margin:.3em 0">{{$reason|nl2br}}</p>{{/if}}
+		</div>
+	{{else}}
+		<p style="margin:.3em 0">Aucune demande en attente.</p>
+	{{/load}}
+	<p style="margin:.5em 0 0"><a href="/m/covoiturage/demandes.html">Voir toutes les demandes</a></p>
+</div>
+{{/restrict}}

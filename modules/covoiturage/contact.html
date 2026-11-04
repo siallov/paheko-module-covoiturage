@@ -1,0 +1,55 @@
+{{:assign var="retention_days" value=$module.config.retention_days|intval|or:30}}
+{{:delete :type="ride" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:admin_header title="Contacter une personne — Covoiturage de l’association" layout="public"}}
+{{if !$logged_user}}
+	<section style="max-width:680px;margin:3em auto;padding:2em;border:1px solid #cfe3e3;border-radius:12px;background:#f1f9f8;text-align:center">
+		<h1 style="color:#008f87">Connectez-vous pour contacter cette personne</h1>
+		<p>Les membres connectés et les visiteurs disposant d’un compte simplifié peuvent contacter les personnes qui proposent un trajet.</p>
+		<p><a href="{{$admin_url}}login.php">Se connecter</a> · <a href="./demande_acces.html">Demander un accès visiteur</a></p>
+	</section>
+{{else}}
+{{#load id=$_GET.id type="ride"}}
+	<h1>Contacter {{$name}}</h1>
+	<p>Annonce pour <strong>{{$event}}</strong> · {{$departure}} → {{$destination}} · {{$date|date_short}}{{if $time}} à {{$time}}{{/if}}</p>
+	{{#form on="send"}}
+		{{if $_POST.sender|trim == ''}}
+			<p class="alert">Indiquez votre nom.</p>
+		{{elseif !$_POST.sender_email|trim|check_email}}
+			<p class="alert">Indiquez une adresse e-mail valide.</p>
+		{{elseif $_POST.message|trim == ''}}
+			<p class="alert">Votre message est vide.</p>
+		{{elseif $_POST.message|strlen > 1500}}
+			<p class="alert">Le message est limité à 1 500 caractères.</p>
+		{{else}}
+			{{:assign var="captcha_pending" value=true}}
+			{{:captcha verify=true}}
+			{{:assign var="captcha_pending" value=false}}
+			{{:assign sender_name=$_POST.sender|trim}}
+			{{:assign sender_email=$_POST.sender_email|trim}}
+			{{:assign sender_message=$_POST.message|trim}}
+			{{:assign mail_body="%s (%s) vous écrit au sujet de votre annonce pour %s :\n\n%s"|args:$sender_name:$sender_email:$event:$sender_message}}
+			{{:mail to=$email subject="Contact au sujet d'un covoiturage" body=$mail_body block_urls=true}}
+			{{:assign var="sent" value=true}}
+			<p class="ok">Votre message a été transmis. La personne pourra vous répondre à l’adresse indiquée.</p>
+		{{/if}}
+	{{/form}}
+	{{if $captcha_pending}}<p class="alert">Erreur de saisie dans la vérification anti-robot : veuillez réessayer.</p>{{else}}{{:form_errors}}{{/if}}
+	<form method="post" action="">
+		<dl>
+			<dt><label for="sender">Votre nom</label></dt>
+			<dd><input id="sender" name="sender" type="text" maxlength="80" value="{{if !$sent}}{{$_POST.sender}}{{/if}}" required /></dd>
+			<dt><label for="sender_email">Votre adresse e-mail</label></dt>
+			<dd><input id="sender_email" name="sender_email" type="email" maxlength="254" value="{{if !$sent}}{{$_POST.sender_email}}{{/if}}" required /></dd>
+			<dt><label for="message">Votre message</label></dt>
+			<dd><textarea id="message" name="message" maxlength="1500" rows="5" required>{{if !$sent}}{{$_POST.message}}{{/if}}</textarea></dd>
+			<dt>{{:captcha html=true}}</dt>
+		</dl>
+		<p>{{:button type="submit" name="send" label="Envoyer le message" class="main"}}</p>
+	</form>
+{{else}}
+	<h1>Annonce introuvable</h1>
+	<p>Cette annonce n’existe plus ou n’est plus disponible.</p>
+{{/load}}
+<p><a href="./">Retour aux annonces</a></p>
+{{/if}}
+{{:admin_footer}}

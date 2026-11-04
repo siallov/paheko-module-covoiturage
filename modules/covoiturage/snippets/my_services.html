@@ -1,0 +1,16 @@
+{{if $logged_user.id_category == 8}}
+<style>
+  h1.main {
+    display: none !important;
+  }
+
+  h1.main ~ :not(.mon-service-personnalise):not(:has(.mon-service-personnalise)) {
+    display: none !important;
+  }
+</style>
+
+
+<div class="mon-service-personnalise">
+ <p>En tant que visiteur, vous n’avez pas d’informations à consulter ici.</p>
+</div>
+{{/if}}

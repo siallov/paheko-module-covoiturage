@@ -1,0 +1,65 @@
+{{#restrict section="config" level="admin" block=true}}{{/restrict}}
+
+
+{{:assign var="view_options.list" value="Liste"}}
+{{:assign var="view_options.map" value="Carte"}}
+
+{{#form on="save"}}
+	{{if $_POST.default_view != 'list' && $_POST.default_view != 'map'}}
+		{{:error message="Choisissez une vue par défaut valide."}}
+	{{elseif $_POST.retention_days|intval < 1 || $_POST.retention_days|intval > 365}}
+		{{:error message="La durée de conservation doit être comprise entre 1 et 365 jours."}}
+	{{elseif $_POST.guest_category_id|intval < 0}}
+		{{:error message="L’identifiant de la catégorie Invités doit être positif."}}
+	{{else}}
+		{{:assign var="default_view" value=$_POST.default_view}}
+		{{if !$_POST.show_map|intval}}{{:assign var="default_view" value="list"}}{{/if}}
+		{{:save key="config"
+			allow_requests=$_POST.allow_requests|intval
+			allow_prereservation=$_POST.allow_prereservation|intval
+			show_map=$_POST.show_map|intval
+			default_view=$default_view
+			retention_days=$_POST.retention_days|intval
+			guest_category_id=$_POST.guest_category_id|intval
+		}}
+		{{:redirect url="./config.html?saved=1"}}
+	{{/if}}
+{{/form}}
+
+{{:admin_header title="Paramètres — Covoiturage de l’association" current="module_covoiturage"}}
+{{:form_errors}}
+
+{{if $_GET.saved}}<p class="block confirm">Les paramètres ont été enregistrés.</p>{{/if}}
+
+<form method="post" action="">
+	<fieldset>
+		<legend>Accès et fonctionnalités</legend>
+		<dl>
+			<p>La consultation, la publication et la pré-réservation sont réservées aux comptes connectés. Les visiteurs peuvent demander un compte simplifié depuis le formulaire public ; après validation et création du compte, ils disposent des mêmes fonctions que les autres comptes connectés.</p>
+			{{:input type="radio" name="allow_requests" label="Autoriser les demandes de trajet — Oui" source=$module.config default=1 value=1}}
+			{{:input type="radio" name="allow_requests" label="Non" source=$module.config value=0}}
+			{{:input type="radio" name="allow_prereservation" label="Autoriser la pré-réservation de places — Oui" source=$module.config default=1 value=1}}
+			{{:input type="radio" name="allow_prereservation" label="Non" source=$module.config value=0}}
+		</dl>
+	</fieldset>
+	<fieldset>
+		<legend>Affichage et conservation</legend>
+		<dl>
+			{{:input type="radio" name="show_map" label="Proposer le mode Carte — Oui" source=$module.config default=1 value=1}}
+			{{:input type="radio" name="show_map" label="Non" source=$module.config value=0}}
+			{{:input type="select" name="default_view" label="Affichage par défaut" source=$module.config default="list" options=$view_options required=true}}
+			{{:input type="number" name="retention_days" min=1 max=365 step=1 label="Supprimer les annonces et pré-réservations après (jours)" source=$module.config default=30 required=true}}
+			{{:input type="number" name="guest_category_id" min=0 step=1 label="Identifiant Paheko de la catégorie Invités" source=$module.config default=0 help="Le bouton crée la fiche directement dans cette catégorie. Indiquez l’identifiant numérique de la catégorie Invités."}}
+		</dl>
+	</fieldset>
+	<p class="submit">{{:button type="submit" name="save" label="Enregistrer les paramètres" shape="right" class="main"}}</p>
+</form>
+
+<form method="get" action="./">
+	<p class="submit">{{:button type="submit" label="Retour au covoiturage" shape="right" class="main"}}</p>
+</form>
+<form method="get" action="./demandes.html">
+	<p class="submit">{{:button type="submit" label="Consulter les demandes d’accès visiteurs" shape="right" class="main"}}</p>
+</form>
+
+{{:admin_footer}}

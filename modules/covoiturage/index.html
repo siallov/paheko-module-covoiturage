@@ -1,0 +1,321 @@
+{{:assign var="retention_days" value=$module.config.retention_days|intval|or:30}}
+{{:delete :type="ride" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:delete :type="booking" where="$$.type = :type AND $$.date < date('now', 'localtime', '-%d days')"|args:$retention_days}}
+{{:admin_header layout="public"}}
+
+{{:assign var="allow_requests" value=$module.config.allow_requests}}
+{{if $allow_requests === null}}{{:assign var="allow_requests" value=true}}{{/if}}
+{{:assign var="allow_prereservation" value=$module.config.allow_prereservation}}
+{{if $allow_prereservation === null}}{{:assign var="allow_prereservation" value=true}}{{/if}}
+{{:assign var="show_map" value=$module.config.show_map}}
+{{if $show_map === null}}{{:assign var="show_map" value=true}}{{/if}}
+{{:assign var="default_view" value=$module.config.default_view|or:"list"}}
+{{if $_POST.publish_token}}{{:assign var="publish_token" value=$_POST.publish_token}}{{else}}{{:assign var="publish_token" value="covoiturage"|uuid}}{{/if}}
+{{:assign var="can_view" value=true}}
+{{if !$logged_user}}{{:assign var="can_view" value=false}}{{/if}}
+{{if $can_view}}{{:assign var="can_participate" value=true}}{{/if}}
+{{if $can_view}}
+{{:assign var="today" value="now"|date:"%Y-%m-%d"}}
+{{:assign var="is_admin" value=false}}
+{{#restrict section="config" level="admin"}}{{:assign var="is_admin" value=true}}{{/restrict}}
+{{#form on="publish"}}
+	{{if !$can_participate}}
+		{{:assign var="publish_error" value="Connectez-vous à votre compte de l’association pour publier une annonce."}}
+	{{else}}
+		{{if $_POST.name|trim == ''}}
+			{{:assign var="publish_error" value="Indiquez votre prénom ou le nom à afficher."}}
+		{{elseif $_POST.event|trim == ''}}
+			{{:assign var="publish_error" value="Indiquez l’activité ou l’événement concerné."}}
+		{{elseif $_POST.date|trim == ''}}
+			{{:assign var="publish_error" value="Indiquez la date du trajet."}}
+		{{elseif !$_POST.date|trim|regexp_match:"/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/"}}
+			{{:assign var="publish_error" value="La date doit être au format AAAA-MM-JJ."}}
+		{{elseif $_POST.date|trim < $today}}
+			{{:assign var="publish_error" value="La date du trajet ne peut pas être passée."}}
+		{{elseif $_POST.time|trim != '' && !$_POST.time|trim|regexp_match:"/^[0-2][0-9]:[0-5][0-9]$/"}}
+			{{:assign var="publish_error" value="L’heure doit être au format HH:MM."}}
+		{{elseif $_POST.time|trim > '23:59'}}
+			{{:assign var="publish_error" value="L’heure indiquée n’est pas valide."}}
+		{{elseif $_POST.departure|trim == ''}}
+			{{:assign var="publish_error" value="Indiquez la ville de départ."}}
+		{{elseif $_POST.destination|trim == ''}}
+			{{:assign var="publish_error" value="Indiquez la destination."}}
+		{{elseif $_POST.name|strlen > 80 || $_POST.event|strlen > 120 || $_POST.departure|strlen > 120 || $_POST.destination|strlen > 120}}
+			{{:assign var="publish_error" value="Un des champs texte dépasse la longueur autorisée."}}
+		{{elseif !$_POST.email|trim|check_email || $_POST.email|strlen > 254}}
+			{{:assign var="publish_error" value="Indiquez une adresse e-mail valide."}}
+		{{elseif $_POST.consent != '1'}}
+			{{:assign var="publish_error" value="Vous devez accepter l’utilisation de ces données pour organiser ce trajet."}}
+		{{elseif !$_POST.publish_token|trim}}
+			{{:assign var="publish_error" value="Le formulaire a expiré. Rechargez la page et réessayez."}}
+		{{elseif $_POST.charter != '1'}}
+			{{:assign var="publish_error" value="Vous devez accepter la charte de covoiturage."}}
+		{{elseif $_POST.kind != 'offer' && $_POST.kind != 'request'}}
+			{{:assign var="publish_error" value="Choisissez une offre ou une demande de trajet."}}
+		{{elseif $_POST.kind == 'request' && !$allow_requests}}
+			{{:assign var="publish_error" value="Les demandes de trajet ne sont pas activées actuellement."}}
+		{{elseif $_POST.kind == 'offer' && $_POST.seats|intval < 1}}
+			{{:assign var="publish_error" value="Pour une offre, indiquez au moins une place."}}
+		{{elseif $_POST.kind == 'offer' && $_POST.seats|intval > 8}}
+			{{:assign var="publish_error" value="Le nombre de places ne peut pas dépasser 8."}}
+		{{elseif $_POST.details|strlen > 500}}
+			{{:assign var="publish_error" value="Le complément est limité à 500 caractères."}}
+		{{else}}
+			{{:assign var="seats_value" value=0}}
+			{{if $_POST.kind == 'offer'}}{{:assign var="seats_value" value=$_POST.seats|intval}}{{/if}}
+			{{:assign var="author_id" value=0}}
+			{{if $logged_user}}{{:assign var="author_id" value=$logged_user.id}}{{/if}}
+			{{:assign var="delete_code" value=$_POST.publish_token|trim}}
+			{{:save
+				assign_new_id="ride_id"
+				key=$delete_code
+				type="ride"
+				kind=$_POST.kind|trim
+				name=$_POST.name|trim
+				event=$_POST.event|trim
+				date=$_POST.date|trim
+				time=$_POST.time|trim
+				departure=$_POST.departure|trim
+				destination=$_POST.destination|trim
+				seats=$seats_value
+				reserved=0
+				details=$_POST.details|trim
+				email=$_POST.email|trim
+				delete_code=$delete_code
+				author_id=$author_id
+			}}
+			{{:assign var="publish_email_body" value="Votre annonce de covoiturage a été publiée.\n\nNuméro de l’annonce : %d\nActivité : %s\nTrajet : %s → %s\nDate : %s\n\nCode secret de suppression : %s\n\nSupprimer l’annonce : %s/m/covoiturage/supprimer.html?id=%d\n\nNe transmettez pas ce code à une autre personne. L’adresse e-mail n’est pas affichée publiquement."|args:$ride_id:$_POST.event:$_POST.departure:$_POST.destination:$_POST.date:$delete_code:$site_url:$ride_id}}
+			{{:mail to=$_POST.email|trim subject="Code de suppression — covoiturage" body=$publish_email_body}}
+			{{:redirect url="%s?published=1"|args:$module.url}}
+		{{/if}}
+	{{/if}}
+{{/form}}
+
+{{:assign var="period" value=$_GET.period|or:"upcoming"}}
+{{:assign var="view" value=$_GET.view|or:$default_view|or:"list"}}
+{{if !$show_map && $view == 'map'}}{{:assign var="view" value="list"}}{{/if}}
+{{:assign var="kind_filter" value=$_GET.kind|or:"all"}}
+{{:assign var="query" value=$_GET.q|trim}}
+{{if $period != 'all' && $period != 'upcoming' && $period != 'today' && $period != 'tomorrow' && $period != 'week' && $period != 'month' && $period != 'past'}}{{:assign var="period" value="upcoming"}}{{/if}}
+{{if $view != 'list' && $view != 'map'}}{{:assign var="view" value="list"}}{{/if}}
+{{if $kind_filter != 'all' && $kind_filter != 'offer' && $kind_filter != 'request'}}{{:assign var="kind_filter" value="all"}}{{/if}}
+{{if $_POST.carpool_form == '1' && !$publish_success}}{{:assign var="repop" value=true}}{{/if}}
+{{if !$show_map && $view == 'map'}}{{:assign var="view" value="list"}}{{/if}}
+
+<style>
+#association-covoit { --association-teal: #007f76; --association-teal-dark: #00665f; --association-ink: #263746; --association-muted: #687783; position: relative; left: 50%; width: 100vw; max-width: none; margin-left: -50vw; padding: 0 24px; color: var(--association-ink); }
+#association-covoit * { box-sizing: border-box; }
+#association-covoit .hero { position: absolute; top: -94px; left: calc(50% - 535px); width: min(440px, calc(50% - 80px)); margin: 0; padding: 0; }
+#association-covoit h1 { margin: 0 0 3px; color: var(--association-teal-dark); font-size: 1.35rem; line-height: 1.15; }
+#association-covoit .hero p { margin: 0; max-width: 440px; color: var(--association-muted); font-size: .82rem; line-height: 1.25; }
+#association-covoit .button-primary { display: inline-block; padding: 13px 20px; border: 1px solid var(--association-teal); border-radius: 5px; background: var(--association-teal); color: #fff !important; text-decoration: none; text-align: center; font-weight: 600; }
+#association-covoit .button-primary:hover { background: var(--association-teal-dark); }
+#association-covoit .browse-toolbar { position: absolute; top: -90px; right: 48px; display: block; margin: 0; }
+#association-covoit .view-tabs, #association-covoit .period-tabs { display: flex; flex-wrap: wrap; }
+#association-covoit .view-tabs { justify-content: flex-end; }
+#association-covoit .view-tabs a, #association-covoit .period-tabs a { display: inline-block; padding: 9px 14px; border: 1px solid #87939c; background: #fff; color: #52616b; text-decoration: none; }
+#association-covoit .view-tabs a:first-child, #association-covoit .period-tabs a:first-child { border-radius: 5px 0 0 5px; }
+#association-covoit .view-tabs a:last-child, #association-covoit .period-tabs a:last-child { border-radius: 0 5px 5px 0; }
+#association-covoit .view-tabs a + a, #association-covoit .period-tabs a + a { border-left: 0; }
+#association-covoit .view-tabs a.active, #association-covoit .period-tabs a.active { border-color: var(--association-teal); background: var(--association-teal); color: #fff; }
+#association-covoit .filter-panel { display: block; width: 100%; margin: 8px 0 20px; border: 0; border-radius: 0; }
+#association-covoit .filter-panel > summary, #association-covoit .more-filter-panel > summary { display: flex; align-items: center; gap: 8px; list-style: none; }
+#association-covoit .filter-panel > summary::-webkit-details-marker, #association-covoit .more-filter-panel > summary::-webkit-details-marker { display: none; }
+#association-covoit .filter-panel > summary::marker, #association-covoit .more-filter-panel > summary::marker { content: ""; }
+#association-covoit .filter-panel > summary::before, #association-covoit .more-filter-panel > summary::before { content: "▸"; display: inline-block; flex: 0 0 1em; width: 1em; text-align: center; }
+#association-covoit .filter-panel[open] > summary::before, #association-covoit .more-filter-panel[open] > summary::before { content: "▾"; }
+#association-covoit .filter-panel > summary { min-height: 40px; padding: 8px 12px; background: #f2f5f6; color: var(--association-teal-dark); cursor: pointer; font-weight: 700; }
+#association-covoit .filter-panel .period-tabs { margin: 12px; }
+#association-covoit .more-filter-panel { border-top: 1px solid #d8e0e4; }
+#association-covoit .more-filter-panel > summary { padding: 10px 14px; color: var(--association-teal-dark); cursor: pointer; font-weight: 600; }
+#association-covoit .filter-form { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 14px; border-top: 1px solid #d8e0e4; }
+#association-covoit .filter-form label { display: block; margin-bottom: 4px; }
+#association-covoit .filter-form input, #association-covoit .filter-form select { min-height: 38px; padding: 7px; }
+#association-covoit .filter-form button { min-height: 38px; padding: 7px 14px; border: 1px solid var(--association-teal); border-radius: 5px; background: var(--association-teal); color: #fff; cursor: pointer; }
+#association-covoit .publish-box { margin: 18px 0 30px; border: 1px solid #d8e0e4; border-radius: 8px; background: #fff; box-shadow: 0 3px 14px #20344212; }
+#association-covoit .publish-trigger { position: absolute; top: -90px; right: 268px; display: inline-block; margin: 0; padding: 10px 14px; border-radius: 5px; background: var(--association-teal); color: #fff !important; text-decoration: none; font-weight: 600; }
+#association-covoit .publish-trigger:hover { background: var(--association-teal-dark); }
+#association-covoit .publish-modal { display: none; }
+#association-covoit .publish-modal:target, #association-covoit .publish-modal.is-open { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px; background: #17232dcc; }
+#association-covoit .publish-backdrop { position: absolute; inset: 0; }
+#association-covoit .publish-dialog { position: relative; z-index: 1; width: min(900px, 100%); max-height: 94vh; overflow-y: auto; border: 1px solid #d8e0e4; border-radius: 8px; background: #fff; box-shadow: 0 12px 40px #0005; }
+#association-covoit .publish-dialog > header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #d8e0e4; background: #f5f7f8; }
+#association-covoit .publish-dialog > header h2 { margin: 0; color: var(--association-teal-dark); font-size: 1.2rem; }
+#association-covoit .publish-close { color: var(--association-ink); font-size: 1.6rem; text-decoration: none; }
+#association-covoit .publish-submit { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+#association-covoit .publish-abandon { display: inline-block; padding: .55em 1em; border: 1px solid currentColor; border-radius: 6px; color: var(--association-ink); text-decoration: none; }
+#association-covoit .publish-content { padding: 18px; }
+#association-covoit .publish-content form { max-width: 860px; }
+#association-covoit .publish-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+#association-covoit .publish-field label { display: block; margin-bottom: 4px; font-weight: 600; }
+#association-covoit .publish-field input, #association-covoit .publish-field select, #association-covoit .publish-field textarea { width: 100%; max-width: 100%; }
+#association-covoit .publish-field-wide { grid-column: 1 / -1; }
+#association-covoit .publish-consent { display: flex; align-items: flex-start; gap: .5em; }
+#association-covoit .publish-consent input { appearance: auto; -webkit-appearance: checkbox; display: inline-block; position: static; flex: 0 0 1.2em; width: 1.2em; height: 1.2em; min-width: 1.2em; margin: .15em 0 0; opacity: 1; visibility: visible; }
+#association-covoit .publish-consent label { display: inline; font-weight: 400; }
+#association-covoit .publish-consent input[type="checkbox"] + label::before, #association-covoit .publish-charter input[type="checkbox"] + label::before { display: none !important; content: none !important; }
+#association-covoit .publish-charter, #association-covoit .publish-submit { margin-top: 14px; }
+#association-covoit .rides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 18px; }
+#association-covoit .rides-map { grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); }
+#association-covoit .ride-card { overflow: hidden; margin: 0; border: 1px solid #d8e0e4; border-radius: 8px; background: #fff; box-shadow: 0 3px 14px #20344212; }
+#association-covoit .ride-card > header { padding: 13px 16px; border-bottom: 1px solid #d8e0e4; background: #f5f7f8; }
+#association-covoit .ride-card > header h3 { margin: 0; font-size: 1.08rem; }
+#association-covoit .ride-body { padding: 16px; }
+#association-covoit .ride-badge { display: inline-block; margin-bottom: 8px; padding: 4px 9px; border-radius: 4px; background: #263746; color: #fff; font-size: .86rem; font-weight: 600; }
+#association-covoit .ride-body p { margin: 7px 0; }
+#association-covoit .ride-event, #association-covoit .ride-date { color: var(--association-muted); }
+#association-covoit .ride-route { font-size: 1.15rem; font-weight: 600; }
+#association-covoit .ride-route span { padding: 0 7px; color: var(--association-teal); }
+#association-covoit .ride-seats { color: var(--association-teal-dark); font-weight: 600; }
+#association-covoit .ride-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+#association-covoit .ride-actions a { display: inline-block; padding: 9px 13px; border: 1px solid var(--association-teal); border-radius: 5px; color: var(--association-teal-dark); text-decoration: none; }
+#association-covoit .ride-actions a:first-child { background: var(--association-teal); color: #fff; }
+#association-covoit .ride-actions a:hover { filter: brightness(.95); }
+#association-covoit .map-link { display: inline-block; margin-top: 8px; color: var(--association-teal-dark); }
+#association-covoit .privacy-note { margin-top: 24px; color: var(--association-muted); font-size: .9rem; }
+@media (max-width: 900px) { #association-covoit .hero { position: static; width: auto; margin: 0 0 12px; } #association-covoit .publish-trigger, #association-covoit .browse-toolbar { position: static; display: inline-block; margin: 0 8px 16px 0; } #association-covoit .view-tabs { justify-content: flex-start; } #association-covoit h1 { font-size: 1.45rem; } #association-covoit .rides { grid-template-columns: 1fr; } }
+@media (max-width: 680px) { #association-covoit .publish-fields { grid-template-columns: 1fr; } #association-covoit .publish-field-wide { grid-column: 1; } #association-covoit .browse-toolbar { display: block; } #association-covoit .period-tabs a { flex: 1 1 33%; text-align: center; } }
+</style>
+
+<main id="association-covoit">
+	<section class="hero">
+		<div>
+			<h1>Covoiturage de l’association</h1>
+			<p>Rejoignez les activités de l’association : proposez des places ou trouvez un trajet partagé. Vos coordonnées restent privées.</p>
+		</div>
+	</section>
+{{if $_GET.published == '1'}}<p class="ok">Votre annonce est publiée. Le code secret de suppression a été envoyé à l’adresse e-mail indiquée.</p>{{/if}}
+{{if $can_participate}}
+<a class="publish-trigger" href="#publier" id="ouvrir-publier">Créer une annonce de covoiturage</a>
+<div class="publish-modal {{if $_POST.carpool_form == '1' && !$publish_success}}is-open{{/if}}" id="publier">
+	<a class="publish-backdrop" href="#" aria-label="Fermer la fenêtre de publication"></a>
+	<section class="publish-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-title">
+		<header><h2 id="publish-title">Créer une annonce de covoiturage</h2><a class="publish-close" href="#" aria-label="Fermer">×</a></header>
+		<div class="publish-content">
+{{if $publish_error}}<p class="alert">{{$publish_error}}</p>{{else}}{{:form_errors}}{{/if}}
+<form method="post" action="">
+		<input type="hidden" name="carpool_form" value="1" />
+		<input type="hidden" name="publish_token" value="{{$publish_token}}" />
+		<div class="publish-fields">
+			<div class="publish-field"><label for="kind">Type d’annonce</label><select id="kind" name="kind" required>
+				<option value="offer">Je propose des places</option>
+				{{if $allow_requests}}<option value="request" {{if $repop && $_POST.kind == 'request'}}selected{{/if}}>Je cherche une place</option>{{/if}}
+			</select></div>
+			<div class="publish-field"><label for="name">Nom affiché</label><input id="name" name="name" type="text" maxlength="80" value="{{if $repop}}{{$_POST.name}}{{/if}}" required /></div>
+			<div class="publish-field"><label for="event">Activité ou événement association</label><input id="event" name="event" type="text" maxlength="120" value="{{if $repop}}{{$_POST.event}}{{/if}}" required /></div>
+			<div class="publish-field"><label for="date">Date du trajet</label><input id="date" name="date" type="date" min="{{$today}}" value="{{if $repop}}{{$_POST.date}}{{/if}}" required /></div>
+			<div class="publish-field"><label for="time">Heure de départ (facultatif)</label><input id="time" name="time" type="time" value="{{if $repop}}{{$_POST.time}}{{/if}}" /></div>
+			<div class="publish-field"><label for="departure">Ville de départ</label><input id="departure" name="departure" type="text" maxlength="120" value="{{if $repop}}{{$_POST.departure}}{{/if}}" required /></div>
+			<div class="publish-field"><label for="destination">Destination</label><input id="destination" name="destination" type="text" maxlength="120" value="{{if $repop}}{{$_POST.destination}}{{/if}}" required /></div>
+			<div class="publish-field"><label for="seats">Places proposées (pour une offre)</label><input id="seats" name="seats" type="number" min="1" max="8" value="{{if $repop}}{{$_POST.seats|intval}}{{else}}1{{/if}}" /></div>
+			<div class="publish-field publish-field-wide"><label for="details">Précisions (facultatif)</label><textarea id="details" name="details" maxlength="500" rows="3">{{if $repop}}{{$_POST.details}}{{/if}}</textarea></div>
+			<div class="publish-field publish-field-wide"><label for="email">Votre adresse e-mail (non affichée)</label><input id="email" name="email" type="email" maxlength="254" value="{{if $repop}}{{$_POST.email}}{{/if}}" required /></div>
+			<div class="publish-field publish-field-wide"><strong>Utilisation de vos données</strong>
+				<div class="publish-consent"><input id="consent" name="consent" type="checkbox" value="1" required /><label for="consent">J’accepte que mon nom, mon adresse e-mail et les informations du trajet soient utilisés pour organiser ce covoiturage. Mon adresse e-mail ne sera pas affichée et l’annonce sera supprimée {{$retention_days}} jours après la date du trajet.</label></div>
+			</div>
+		</div>
+		<details class="publish-charter">
+			<summary>Lire la charte de covoiturage</summary>
+			<ul>
+				<li>Les annonces servent à mettre en relation les participants ; chaque trajet doit être confirmé directement entre eux avant le départ.</li>
+				<li>Conducteur et passagers conviennent ensemble de l’horaire, du lieu de rendez-vous, de l’itinéraire et, le cas échéant, d’une participation aux frais.</li>
+				<li>Le conducteur s’assure d’être en règle pour conduire et d’utiliser un véhicule assuré et adapté. Il respecte le code de la route et les consignes de sécurité.</li>
+				<li>Chaque passager respecte les consignes de sécurité et porte sa ceinture. Chacun prévient les autres participants dès que possible en cas de changement ou d’annulation.</li>
+				<li>L’association fournit uniquement cet espace de mise en relation et n’organise ni ne garantit les trajets.</li>
+			</ul>
+		</details>
+		<p class="publish-consent publish-charter"><input id="charter" name="charter" type="checkbox" value="1" required /><label for="charter">J’ai lu et j’accepte la charte de covoiturage.</label></p>
+		<p class="publish-submit">{{:button type="submit" name="publish" label="Publier l’annonce" class="button-primary"}}<a class="publish-abandon" href="./">Abandonner la saisie</a></p>
+</form>
+		</div>
+	</section>
+</div>
+{{else}}
+<p class="alert">Connectez-vous à votre compte de l’association pour publier une annonce ou pré-réserver des places. Les comptes visiteurs validés peuvent également utiliser ces fonctions.</p>
+{{/if}}
+
+<div class="browse-toolbar">
+	<nav class="view-tabs" aria-label="Mode d’affichage">
+		<a class="{{if $view == 'list'}}active{{/if}}" href="?view=list&amp;period={{$period}}&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">☷ Liste</a>
+		{{if $show_map}}<a class="{{if $view == 'map'}}active{{/if}}" href="?view=map&amp;period={{$period}}&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">▣ Carte</a>{{/if}}
+	</nav>
+</div>
+<details class="filter-panel" {{if $kind_filter != 'all' || $query}}open{{/if}}>
+	<summary>Filtrer</summary>
+	<nav class="period-tabs" aria-label="Période des trajets">
+		<a class="{{if $period == 'all'}}active{{/if}}" href="?view={{$view}}&amp;period=all&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Tous</a>
+		<a class="{{if $period == 'upcoming'}}active{{/if}}" href="?view={{$view}}&amp;period=upcoming&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">À venir</a>
+		<a class="{{if $period == 'today'}}active{{/if}}" href="?view={{$view}}&amp;period=today&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Aujourd’hui</a>
+		<a class="{{if $period == 'tomorrow'}}active{{/if}}" href="?view={{$view}}&amp;period=tomorrow&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Demain</a>
+		<a class="{{if $period == 'week'}}active{{/if}}" href="?view={{$view}}&amp;period=week&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Cette semaine</a>
+		<a class="{{if $period == 'month'}}active{{/if}}" href="?view={{$view}}&amp;period=month&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Ce mois-ci</a>
+		<a class="{{if $period == 'past'}}active{{/if}}" href="?view={{$view}}&amp;period=past&amp;kind={{$kind_filter}}&amp;q={{$query|url_encode}}&amp;filters=1">Passés</a>
+	</nav>
+	<details class="more-filter-panel" {{if $kind_filter != 'all' || $query}}open{{/if}}>
+		<summary>Plus de filtres</summary>
+		<form class="filter-form" method="get" action="">
+			<input type="hidden" name="view" value="{{$view}}" />
+			<input type="hidden" name="period" value="{{$period}}" />
+			<input type="hidden" name="filters" value="1" />
+			<div><label for="kind_filter">Type d’annonce</label>
+				<select id="kind_filter" name="kind">
+					<option value="all" {{if $kind_filter == 'all'}}selected{{/if}}>Tous</option>
+					<option value="offer" {{if $kind_filter == 'offer'}}selected{{/if}}>Propose des places</option>
+					{{if $allow_requests}}<option value="request" {{if $kind_filter == 'request'}}selected{{/if}}>Recherche une place</option>{{/if}}
+				</select>
+			</div>
+			<div><label for="query">Événement, départ ou destination</label>
+				<input id="query" name="q" type="search" value="{{$query}}" maxlength="120" />
+			</div>
+			<button type="submit">Appliquer</button>
+			<a href="?view={{$view}}&amp;period={{$period}}&amp;filters=1">Effacer les filtres</a>
+		</form>
+	</details>
+</details>
+<div class="rides {{if $view == 'map'}}rides-map{{/if}}">
+{{#load type="ride"
+ where="(:period = 'all' OR (:period = 'upcoming' AND $$.date >= date('now', 'localtime')) OR (:period = 'today' AND $$.date = date('now', 'localtime')) OR (:period = 'tomorrow' AND $$.date = date('now', 'localtime', '+1 day')) OR (:period = 'week' AND $$.date >= date('now', 'localtime', 'weekday 0', '-6 days') AND $$.date < date('now', 'localtime', 'weekday 0', '+1 day')) OR (:period = 'month' AND strftime('%Y-%m', $$.date) = strftime('%Y-%m', 'now', 'localtime')) OR (:period = 'past' AND $$.date < date('now', 'localtime'))) AND (:kind = 'all' OR $$.kind = :kind) AND (:query = '' OR $$.event LIKE '%' || :query || '%' OR $$.departure LIKE '%' || :query || '%' OR $$.destination LIKE '%' || :query || '%')"
+ :period=$period :kind=$kind_filter :query=$query
+ order="json_extract(document, '$.date') ASC" limit=200}}
+	<article class="ride-card">
+		<header><h3>{{$name}}</h3></header>
+		<div class="ride-body">
+		<span class="ride-badge">{{if $kind == 'offer'}}🚘 Propose des places{{else}}🙋 Recherche une place{{/if}}</span>
+		<p class="ride-event">Pour : <strong>{{$event}}</strong></p>
+		<p class="ride-date">Départ : {{$date|date_short}}{{if $time}} · {{$time}}{{/if}}</p>
+		<p class="ride-route">{{$departure}} <span>→</span> {{$destination}}</p>
+		{{if $kind == 'offer'}}
+			{{:assign var="reserved_num" value=$reserved|intval}}
+			{{:assign var="available" value="%d-%d"|args:$seats:$reserved_num|math}}
+			<p class="ride-seats">Places disponibles : {{$available}}</p>
+		{{/if}}
+		{{if $details}}<p>{{$details|nl2br}}</p>{{/if}}
+		{{if $view == 'map'}}<a class="map-link" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&amp;origin={{$departure|url_encode}}&amp;destination={{$destination|url_encode}}">↗ Voir l’itinéraire sur la carte</a>{{/if}}
+		<div class="ride-actions">
+			{{if $can_participate && $allow_prereservation && $kind == 'offer'}}{{if $available > 0}}<a href="./reserver.html?id={{$id}}">Pré-réserver</a>{{/if}}{{/if}}
+			<a href="./contact.html?id={{$id}}">Prendre contact</a>
+			{{:assign var="can_delete" value=false}}{{if $is_admin}}{{:assign var="can_delete" value=true}}{{elseif $logged_user && $author_id && $author_id == $logged_user.id}}{{:assign var="can_delete" value=true}}{{/if}}{{if $can_delete}}<a href="./supprimer.html?id={{$id}}">Supprimer</a>{{/if}}
+		</div>
+		</div>
+	</article>
+{{else}}
+	<p class="empty-state">Aucune annonce pour le moment. Vous pouvez publier la première.</p>
+{{/load}}
+</div>
+
+<p class="privacy-note"><small>Les trajets sont organisés directement entre participants. Vérifiez les détails et les modalités avec la personne avant le départ. Les trajets passés restent consultables pendant {{$retention_days}} jours, puis les données sont supprimées.</small></p>
+{{#restrict section="config" level="admin"}}<p class="privacy-note"><a href="./config.html">Paramètres du covoiturage</a></p>{{/restrict}}
+
+
+
+</main>
+{{else}}
+	<section style="max-width:680px;margin:3em auto;padding:2em;border:1px solid #cfe3e3;border-radius:12px;background:#f1f9f8;text-align:center">
+		<h1 style="color:#008f87">Bienvenue sur le covoiturage</h1>
+		<p>Les annonces sont accessibles aux membres connectés et aux visiteurs après la création d’un compte simplifié.</p>
+		<p>Vous avez déjà un compte ? <a href="{{$admin_url}}login.php">Connectez-vous</a>.</p>
+		<p>Vous êtes visiteur ? Faites une demande de compte simplifié. Après validation par l’association, vous pourrez vous connecter et consulter les annonces.</p>
+		<p><a href="./demande_acces.html" style="display:inline-block;padding:.7em 1.2em;border-radius:6px;background:#00a69c;color:#fff;text-decoration:none;font-weight:bold">Demander un accès visiteur</a></p>
+	</section>
+{{/if}}
+{{:admin_footer}}

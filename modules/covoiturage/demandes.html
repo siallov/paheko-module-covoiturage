@@ -1,0 +1,119 @@
+{{#restrict section="users" level="write" block=true}}{{/restrict}}
+{{:admin_header title="Demandes d’accès visiteurs — Covoiturage de l’association" current="module_covoiturage"}}
+{{:assign var="guest_category_id" value=$module.config.guest_category_id|intval}}
+
+{{#form on="create_member"}}
+	{{if $_POST.request_id|intval < 1}}
+		{{:error message="Cette demande n’est pas valide."}}
+	{{elseif !$guest_category_id}}
+		{{:error message="Renseignez l’identifiant de la catégorie Invités dans les paramètres du module."}}
+	{{else}}
+		{{#load id=$_POST.request_id|intval type="access_request"}}
+			{{if $status != 'new'}}
+				{{:error message="Cette demande a déjà été traitée."}}
+			{{else}}
+				{{#select id, nom FROM users WHERE nom = :nom LIMIT 1; :nom=$name assign="existing_member"}}{{/select}}
+				{{if $existing_member.id}}
+					{{:assign var="existing_body" value="Bonjour %s,\n\nNous avons bien reçu votre demande d’accès au covoiturage. Un compte portant déjà ce nom existe dans le fichier des membres ; aucun nouveau compte n’a donc été créé.\n\nPour votre première connexion ou pour choisir un nouveau mot de passe, ouvrez directement ce lien :\n%sadmin/password.php?new\n\nSaisissez votre adresse e-mail : %s, puis suivez les instructions affichées.\n\nSi vous pensez qu’il s’agit d’une erreur, contactez les responsables de l’association.\n\nCordialement."|args:$name:$site_url:$email}}
+					{{:mail to=$email subject="Votre demande d’accès au covoiturage" body=$existing_body}}
+					{{:save id=$id type="access_request" status="existing" existing_member_id=$existing_member.id existing_email_sent=1}}
+					{{:redirect url="./demandes.html?existing=1"}}
+				{{else}}
+					{{:assign var="welcome_body" value="Bonjour %s,\n\nVotre compte est créé pour accéder au covoiturage.\n\nPour votre première connexion et choisir votre mot de passe, ouvrez directement ce lien :\n%sadmin/password.php?new\n\nSaisissez votre adresse e-mail : %s, puis suivez les instructions affichées. Paheko vous enverra un lien sécurisé pour définir votre mot de passe.\n\nBienvenue."|args:$name:$site_url:$email}}
+					{{:api method="POST" path="user/new" assign="created_member" assign_code="api_code" nom=$name email=$email telephone=$phone id_category=$guest_category_id}}
+					{{if $created_member.id}}
+						{{:save id=$id type="access_request" status="created" member_id=$created_member.id}}
+						{{:mail to=$email subject="Votre première connexion au covoiturage" body=$welcome_body}}
+						{{:save id=$id type="access_request" welcome_sent=1}}
+						{{:redirect url="./demandes.html?created=1"}}
+					{{elseif $api_code >= 200 && $api_code < 300}}
+						{{:save id=$id type="access_request" status="created" member_id=$created_member.id}}
+						{{:mail to=$email subject="Votre première connexion au covoiturage" body=$welcome_body}}
+						{{:save id=$id type="access_request" welcome_sent=1}}
+						{{:redirect url="./demandes.html?created=1"}}
+					{{else}}
+						{{:assign var="api_error" value=$created_member.error|or:"Paheko n’a pas fourni de détail."}}
+						{{:error message="Paheko n’a renvoyé aucun identifiant de membre (réponse API %d) : %s"|args:$api_code:$api_error}}
+					{{/if}}
+				{{/if}}
+			{{/if}}
+		{{else}}
+			{{:error message="Cette demande est introuvable."}}
+		{{/load}}
+	{{/if}}
+{{/form}}
+
+{{#form on="reject_request"}}
+	{{if $_POST.request_id|intval < 1}}
+		{{:error message="Cette demande n’est pas valide."}}
+	{{else}}
+		{{#load id=$_POST.request_id|intval type="access_request"}}
+			{{if $status != 'new'}}
+				{{:error message="Cette demande a déjà été traitée."}}
+			{{else}}
+				{{:save id=$id type="access_request" status="rejected"}}
+				{{:redirect url="./demandes.html?rejected=1"}}
+			{{/if}}
+		{{else}}
+			{{:error message="Cette demande est introuvable."}}
+		{{/load}}
+	{{/if}}
+{{/form}}
+
+{{#form on="delete_request"}}
+	{{if $_POST.request_id|intval < 1}}
+		{{:error message="Cette demande n’est pas valide."}}
+	{{else}}
+		{{#load id=$_POST.request_id|intval type="access_request"}}
+			{{:delete id=$id type="access_request"}}
+			{{:redirect url="./demandes.html?deleted=1"}}
+		{{else}}
+			{{:error message="Cette demande est introuvable ou a déjà été supprimée."}}
+		{{/load}}
+	{{/if}}
+{{/form}}
+
+<h1>Demandes d’accès visiteurs</h1>
+<p>Les demandes envoyées depuis le formulaire public sont conservées ici pour traitement par les administrateurs. La demande ne crée pas automatiquement un compte Paheko.</p>
+{{if $_GET.created}}<p class="block confirm">La fiche membre a été créée dans la catégorie configurée et les instructions de première connexion ont été envoyées par e-mail. Vérifiez la fiche dans Paheko.</p>{{/if}}
+{{if $_GET.existing}}<p class="block warning">Usager existant : aucun nouveau membre n’a été créé. Un courriel explicatif a été envoyé au demandeur. Supprimez cette demande après vérification.</p>{{/if}}
+{{if $_GET.rejected}}<p class="block confirm">La demande a été refusée.</p>{{/if}}
+{{if $_GET.deleted}}<p class="block confirm">La demande a été supprimée définitivement.</p>{{/if}}
+{{:form_errors}}
+
+{{#load type="access_request" order="json_extract(document, '$.submitted_at') DESC" limit=200}}
+	<article style="margin:1em 0;padding:1em;border:1px solid #ccd8dd;border-radius:8px;background:#fff">
+		<h2 style="margin-top:0">{{$name}}</h2>
+		<p><strong>Reçue le :</strong> {{$submitted_at}}</p>
+		<p><strong>Adresse e-mail :</strong> <a href="mailto:{{$email}}">{{$email}}</a></p>
+		{{if $phone}}<p><strong>Téléphone :</strong> <a href="tel:{{$phone}}">{{$phone}}</a></p>{{/if}}
+		{{if $reason}}<p><strong>Message :</strong><br />{{$reason|nl2br}}</p>{{/if}}
+		<p><strong>État :</strong> {{if $status == 'new'}}À traiter{{elseif $status == 'existing'}}Usager existant — demande à supprimer{{if $existing_member_id}} — <a href="{{$admin_url}}users/details.php?id={{$existing_member_id}}">voir la fiche correspondante</a>{{/if}}{{elseif $status == 'duplicate'}}Usager existant — demande à supprimer{{elseif $status == 'created'}}Membre créé{{if $welcome_sent}} — instructions envoyées{{/if}} — <a href="{{$admin_url}}users/details.php?id={{$member_id}}">ouvrir la fiche Paheko n° {{$member_id}}</a>{{elseif $status == 'rejected'}}Demande refusée{{else}}Traité{{/if}}</p>
+		{{if $status == 'new'}}
+			{{if $guest_category_id}}
+				<form method="post" action="">
+					<input type="hidden" name="request_id" value="{{$id}}" />
+					{{:button type="submit" name="create_member" label="Créer le membre dans « Invités »" shape="plus" class="main"}}
+				</form>
+				<p class="help">Le clic crée la fiche Paheko dans la catégorie configurée et envoie automatiquement au visiteur les instructions pour lancer sa première connexion.</p>
+			{{else}}
+				<p class="help">Renseignez d’abord l’identifiant de la catégorie « Invités » dans les paramètres du module pour activer la création du membre.</p>
+			{{/if}}
+			<form method="post" action="" onsubmit="return confirm('Confirmer le refus de cette demande d’inscription ? La demande sera marquée comme refusée.');">
+				<input type="hidden" name="request_id" value="{{$id}}" />
+				{{:button type="submit" name="reject_request" label="Refuser la demande"}}
+			</form>
+		{{elseif $status == 'existing' || $status == 'duplicate'}}
+			<p class="help">Un courriel explicatif a été envoyé au demandeur. Supprimez cette demande ; la fiche membre existante reste inchangée.</p>
+		{{/if}}
+		<form method="post" action="" onsubmit="return confirm('Supprimer définitivement cette demande d’inscription ? Cette action est irréversible.');">
+			<input type="hidden" name="request_id" value="{{$id}}" />
+			{{:button type="submit" name="delete_request" label="Supprimer la demande"}}
+		</form>
+	</article>
+{{else}}
+	<p>Aucune demande d’accès visiteur enregistrée pour le moment.</p>
+{{/load}}
+
+<p><a href="./config.html">Retour aux paramètres du covoiturage</a></p>
+{{:admin_footer}}
